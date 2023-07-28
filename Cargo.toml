@@ -1,9 +1,0 @@
-[workspace]
-resolver = "2"
-members = [
-    "client",
-    "server"
-]
-
-[workspace.package]
-authors = ["MrFixThis <mrfixthis55@gamil.com>"]

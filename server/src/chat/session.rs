@@ -1,14 +1,14 @@
 use std::time::{Duration, Instant};
 
 use actix::{
-    fut, Actor, ActorContext, ActorFutureExt, Addr, AsyncContext, Handler, StreamHandler,
-    WrapFuture, ContextFutureSpawner
+    fut, Actor, ActorContext, ActorFutureExt, Addr, AsyncContext, ContextFutureSpawner, Handler,
+    StreamHandler, WrapFuture,
 };
 use actix_web_actors::ws;
 
 use crate::{chat::message::Disconnect, settings};
 
-use super::message::{self, Connect, ClientMsg};
+use super::message::{self, ClientMsg, Connect};
 
 pub struct ChatSession {
     id: usize,
@@ -37,7 +37,6 @@ impl ChatSession {
             let timeout = Duration::from_secs(settings.timeout());
             if Instant::now().duration_since(act.hb) > timeout {
                 log::info!("[client]: heartbeat signal failed");
-
                 act.addr.do_send(Disconnect {
                     id: act.id,
                     name: act.name.clone(),
@@ -87,7 +86,7 @@ impl Handler<message::ServerMsg> for ChatSession {
     type Result = ();
 
     fn handle(&mut self, msg: message::ServerMsg, ctx: &mut Self::Context) {
-        ctx.text(msg.message)
+        ctx.text(msg.0)
     }
 }
 
@@ -103,15 +102,15 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSession {
                         message: msg.to_owned(),
                         room: self.room.clone(),
                     })
-                },
+                }
                 ws::Message::Ping(msg) => {
                     self.hb = Instant::now();
                     ctx.pong(&msg);
-                },
+                }
                 ws::Message::Pong(_) => self.hb = Instant::now(),
                 ws::Message::Close(reason) => ctx.close(reason),
                 ws::Message::Continuation(_) => ctx.stop(),
-                _ => ()
+                _ => (),
             },
             Err(_) => ctx.stop(),
         }

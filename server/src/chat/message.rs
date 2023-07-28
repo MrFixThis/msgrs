@@ -1,18 +1,16 @@
 use std::fmt::{Debug, Display};
 
 use actix::{Message, Recipient};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-/// A message from the `server` to all the clients.
-#[derive(Clone, Message, Serialize)]
+/// A message from the `server` to all the `client`s.
+#[derive(Clone, Message)]
 #[rtype(result = "()")]
-pub struct ServerMsg {
-    pub client_name: String,
-    pub message: String,
-}
+#[repr(transparent)]
+pub struct ServerMsg(pub String);
 
 /// A message from a `client`.
-#[derive(Debug, Message, Deserialize)]
+#[derive(Debug, Message, Serialize)]
 #[rtype(result = "()")]
 pub struct ClientMsg {
     pub(super) client_id: usize,
@@ -24,15 +22,15 @@ pub struct ClientMsg {
 impl Display for ClientMsg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ClientMsg {
-            client_id,
             client_name,
             message,
             room,
+            ..
         } = self;
         write!(
             f,
-            r#"[message]: client {{ id: {}, name: {}, message: "{}", room: "{}" }}"#,
-            client_id, client_name, message, room
+            r#"[message]: client "{}" in room "{}" says: "{}""#,
+            client_name, room, message
         )
     }
 }
@@ -50,7 +48,7 @@ impl Display for Connect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            r#"[connection]: client {{ name: {}, room: "{}" }}"#,
+            r#"[connection]: client "{}" has connected to the server in room "{}""#,
             self.name, self.room
         )
     }
@@ -68,8 +66,8 @@ impl Display for Disconnect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            r#"[disconnection]: client {{ id: {}, name: "{}" }}"#,
-            self.id, self.name
+            r#"[disconnection]: client "{}" has been disconnected from the server"#,
+            self.name
         )
     }
 }

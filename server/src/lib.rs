@@ -2,18 +2,27 @@ use actix::{Actor, Addr};
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 use chat::{session, ChatServer};
+use serde::Deserialize;
 
 mod chat;
 pub mod settings;
 
+#[derive(Deserialize)]
+struct Register {
+    name: String,
+    room: String,
+}
+
 #[actix_web::get("/")]
 async fn ws_chat(
     req: HttpRequest,
+    reg: web::Query<Register>,
     stream: web::Payload,
     server: web::Data<Addr<ChatServer>>,
 ) -> actix_web::Result<HttpResponse> {
+    let Register { name, room } = reg.into_inner();
     ws::start(
-        session::ChatSession::new(String::new(), String::new(), server.as_ref().clone()),
+        session::ChatSession::new(name, room, server.as_ref().clone()),
         &req,
         stream,
     )

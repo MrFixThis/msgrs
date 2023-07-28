@@ -5,10 +5,13 @@ pub mod session;
 use message::*;
 
 use actix::{Actor, Context, Handler, Recipient};
+use rand::{rngs::ThreadRng, Rng};
 
 pub struct ChatServer {
-    sessions: HashMap<usize, Recipient<ServerMsg>>,
+    sessions: HashMap<usize, Recipient<ServerMsg>>, // <- ws handhle
     rooms: HashMap<String, HashSet<usize>>,
+    rng: ThreadRng,
+    last: usize,
 }
 
 impl ChatServer {
@@ -16,14 +19,18 @@ impl ChatServer {
         Self {
             sessions: HashMap::new(),
             rooms: HashMap::new(),
+            rng: Default::default(),
+            last: 0,
         }
     }
 
-    fn send_msg(&self, room: &str, msg: ServerMsg) {
+    fn send_msg(&self, skip: usize, room: &str, msg: ServerMsg) {
         if let Some(sessions) = self.rooms.get(room) {
             for id in sessions {
-                if let Some(r) = self.sessions.get(id) {
-                    r.do_send(msg.clone())
+                if skip.ne(id) {
+                    if let Some(r) = self.sessions.get(id) {
+                        r.do_send(msg.clone())
+                    }
                 }
             }
         }
@@ -40,26 +47,28 @@ impl Handler<Connect> for ChatServer {
     fn handle(&mut self, msg: Connect, _: &mut Self::Context) -> Self::Result {
         log::info!("{msg}");
 
-        let Connect {
-            name: client_name,
-            room,
-            addr,
-        } = msg;
+        let Connect { name, room, addr } = msg;
+        let id: usize = loop {
+            let n = self.rng.gen();
+            if n != self.last {
+                self.last = n;
+                break n;
+            }
+        };
 
         self.send_msg(
+            id,
             &room,
-            ServerMsg {
-                message: format!(r#"client "{}" connected to room "{}""#, client_name, room),
-                client_name,
-            },
+            ServerMsg(format!(
+                r#"client "{name}" has connected to the room"#
+            )),
         );
 
-        let id = self.sessions.len();
         self.sessions.insert(id, addr);
         self.rooms
-            .entry(room.clone())
-            .or_insert_with(|| {
-                log::info!(r#"creating room "{}""#, room);
+            .entry(room)
+            .or_insert_with_key(|r| {
+                log::info!(r#"[server]: inexistent room "{r}" created"#);
                 HashSet::new()
             })
             .insert(id);
@@ -71,14 +80,10 @@ impl Handler<Connect> for ChatServer {
 impl Handler<Disconnect> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: Disconnect, _: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: Disconnect, _: &mut Self::Context) {
         log::info!("{msg}");
 
-        let Disconnect {
-            id,
-            name: client_name,
-        } = msg;
-
+        let Disconnect { id, name } = msg;
         {
             _ = self.sessions.remove(&id);
             self.rooms.iter_mut().for_each(|(_, c)| _ = c.remove(&id));
@@ -86,11 +91,11 @@ impl Handler<Disconnect> for ChatServer {
 
         for (room, _) in self.rooms.iter() {
             self.send_msg(
+                id,
                 room,
-                ServerMsg {
-                    message: format!(r#"client "{}" disconnected from the server"#, client_name),
-                    client_name: client_name.clone(),
-                },
+                ServerMsg(format!(
+                    r#"client "{name}" has been disconnected from the server"#
+                )),
             );
         }
     }
@@ -103,18 +108,23 @@ impl Handler<ClientMsg> for ChatServer {
         log::info!("{msg}");
 
         let ClientMsg {
+            client_id,
             client_name,
             message,
             room,
-            ..
         } = msg;
 
         self.send_msg(
+            client_id,
             &room,
-            ServerMsg {
-                client_name,
-                message,
-            },
+            ServerMsg(
+                serde_json::json!({
+                    "client_id": client_id,
+                    "client_name": client_name,
+                    "message": message
+                })
+                .to_string(),
+            ),
         )
     }
 }
